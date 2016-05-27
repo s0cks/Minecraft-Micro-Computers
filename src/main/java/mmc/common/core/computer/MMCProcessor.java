@@ -5,6 +5,7 @@ import io.github.s0cks.mmc.Binary;
 import io.github.s0cks.mmc.Instruction;
 import io.github.s0cks.mmc.Operand;
 import io.github.s0cks.mmc.OperandAddress;
+import io.github.s0cks.mmc.OperandBytes;
 import io.github.s0cks.mmc.OperandInteger;
 import io.github.s0cks.mmc.OperandLabel;
 import io.github.s0cks.mmc.OperandRegister;
@@ -20,39 +21,44 @@ import java.util.function.Function;
 
 public final class MMCProcessor
 implements IProcessor {
+  private static final int[] blankPage = new int[0x100];
+  static{
+    Arrays.fill(blankPage, 0x0);
+  }
+
   private static final Map<Integer, Function<MMCProcessor, Void>> syscalls = new HashMap<>();
 
   static{
     syscalls.put(0xB, (processor -> {
-      processor.mov(Register.RCX, 0x8000);
-      for(int i = 0; i < processor.writeOffset; i += 2){
-        processor.mov(new Address(Register.RCX, i), 0);
-      }
-      processor.writeOffset = 0;
       return null;
     }));
 
     syscalls.put(0xC, (processor -> {
-      int x = processor.registerValue(Register.RDI);
-      int y = processor.registerValue(Register.RAX);
-      processor.writeOffset = (y * 32) + x;
       return null;
     }));
 
     syscalls.put(0xA, (processor -> {
-      processor.mov(Register.RCX, 0x8000);
-      processor.mov(new Address(Register.RCX, processor.writeOffset), Register.RDI);
-      processor.writeOffset += 2;
+      return null;
+    }));
+
+    syscalls.put(0xF, (processor -> {
+      processor.mov(new OperandRegister(Register.RCX), new OperandInteger(0x8000));
+      for(int i = 0; i < (processor.registerValue(Register.RAX) * 2) - 2; i += 2){
+        processor.mov(new OperandAddress(Register.RCX, processor.writeOffset), new OperandAddress(Register.RDI, i + 2));
+        processor.writeOffset += 2;
+      }
       return null;
     }));
   }
 
   public final ITerminal terminal;
-  public final short[][] registers = new short[Register.values().length][2];
-  public final int[] memory = new int[65535];
-  private short end = 0;
-  private short pc = 0;
-  private short retPC = 0;
+  public final int pageMask = 0xFFFFFFFF;
+  public final int pageCount = (0x10000 - 1) / 0x100 + 1;
+  public final int[] registers = new int[Register.values().length];
+  public final int[][] pages = new int[this.pageCount][];
+  private int end = 0;
+  private int retPC = 0;
+  private int pc = 0;
   private int writeOffset = 0;
 
   public MMCProcessor(ITerminal terminal) {
@@ -61,17 +67,33 @@ implements IProcessor {
 
   @Override
   public void setMemory(int[] mem) {
-    System.arraycopy(mem, 0, this.memory, 0, this.memory.length);
+    int pageCount = mem.length / 0x100;
+    if(pageCount > this.pageCount) throw new IllegalStateException("Memory overflow");
+
+    for(int i = 0; i < pageCount; i++){
+      for(int j = 0; j < 0x100; j++){
+        int[] page = new int[0x100];
+        System.arraycopy(mem, i * 0x100 + j, page, 0, 0x100);
+        this.pages[i] = page;
+      }
+    }
+  }
+
+  public void writeMemory(int loc, int value){
+    int page = loc / 0x100;
+    if(page >= this.pageCount) throw new IllegalStateException("Attempt to write paste end of memory");
+    if(this.pages[page] == null) this.pages[page] = new int[0x100];
+    this.pages[page][loc % 0x100] = value & this.pageMask;
   }
 
   @Override
   public void loadBinary(Binary binary) {
     this.end = (short) binary.counter();
     for (int i = 0; i < 65535; i++) {
-      if(i < binary.counter()){
-        this.memory[i] = binary.get(i);
+      if(i < this.end){
+        this.writeMemory(i, binary.get(i));
       } else{
-        this.memory[i] = 0x0;
+        this.writeMemory(i, 0x0);
       }
     }
   }
@@ -79,141 +101,145 @@ implements IProcessor {
   private Operand<?> getOperand(short value) {
     if(value < Register.values().length){
       return new OperandRegister(Register.values()[value & 0x7]);
+    } else if(value == 0x3F){
+      int len = this.memoryValue(this.pc);
+      String str = "";
+      for(int i = this.pc; i < this.pc + len; i += 2){
+        int high = this.memoryValue(i);
+        int low = this.memoryValue(i + 1);
+        str += ((char) high | (low << 8));
+      }
+      this.pc += len + 1;
+      return new OperandBytes(str);
     } else if(value < 0x10 + Register.values().length){
       Register reg = Register.values()[value & 0x7];
-      int offset = this.memory[this.pc + 1];
-      this.pc++;
+      int offset = this.memoryValue(this.pc);
       return new OperandAddress(reg, offset);
     } else if(value == 0x2F){
-      int addr = this.memory[this.pc + 1];
-      this.pc++;
-      return new OperandLabel(addr);
-    } else if(value >= 0x20){
-      return new OperandInteger(value - 0x20);
+      int label = this.memoryValue(this.pc += 1);
+      return new OperandLabel(label);
     } else if(value == 0x1F){
-      int literal = this.memory[this.pc + 1];
-      this.pc++;
+      int literal = this.memoryValue(this.pc += 1);
       return new OperandInteger(literal);
-    } else{
-      this.pc++;
-      return null;
     }
+
+    this.pc += 1;
+    return null;
   }
 
   @Override
   public int registerValue(Register reg) {
-    return (
-           this.registers[reg.ordinal()][0] |
-           (this.registers[reg.ordinal()][1] << 8)
-    );
+    return this.registers[reg.ordinal()] & 0xFFFF;
+  }
+
+  public void setRegisterValue(Register reg, int value){
+    this.registers[reg.ordinal()] = value & 0xFFFF;
   }
 
   @Override
   public int[] memory() {
-    return Arrays.copyOf(this.memory, this.memory.length);
+    int size = this.pageCount * 0x100;
+    int[] memory = new int[size];
+    for(int i = 0; i < this.pages.length; i++){
+      int[] page = this.pages[i];
+      if(page != null){
+        System.arraycopy(page, 0, memory, i * 0x100, 0x100);
+      } else{
+        System.arraycopy(blankPage, 0, memory, i * 0x100, 0x100);
+      }
+    }
+    return memory;
   }
 
   @Override
   public int memoryValue(Address addr) {
-    return (
-           this.memory[this.registerValue(addr.register) + addr.offset] |
-           (this.memory[this.registerValue(addr.register) + addr.offset + 1] << 8)
-    );
+    return this.memoryValue(this.registerValue(addr.register) + addr.offset);
   }
 
   @Override
   public int memoryValue(int address) {
-    return (
-           this.memory[address] |
-           (this.memory[address + 1] << 8)
-    );
+    int page = address / 0x100;
+    if(page >= this.pageCount) throw new IllegalStateException("Attempt to read past end of memory");
+    if(this.pages[page] == null) return 0;
+    return this.pages[page][address % 0x100] & this.pageMask;
   }
 
-  private void mov(Register dest, Register src) {
-    this.registers[dest.ordinal()][0] = this.registers[src.ordinal()][0];
-    this.registers[dest.ordinal()][1] = this.registers[src.ordinal()][1];
-  }
-
-  private void mov(Register reg, Address destAddr) {
-    this.mov(destAddr, (this.registers[reg.ordinal()][0] | (this.registers[reg.ordinal()][1] << 8)));
-  }
-
-  private void mov(Address addr, Register src) {
-    this.mov(addr, this.registerValue(src));
-  }
-
-  private void mov(Register reg, int value) {
-    this.registers[reg.ordinal()][0] = ((short) ((value & 0xFF)));
-    this.registers[reg.ordinal()][1] = ((short) ((value >> 8) & 0xFF));
-  }
-
-  private void mov(Address addr, int value) {
-    this.memory[this.registerValue(addr.register) + addr.offset] = ((short) (value & 0xFF));
-    this.memory[this.registerValue(addr.register) + addr.offset + 1] = ((short) ((value >> 8) & 0xFF));
-  }
-
-  private void mov(Operand<?> dest, Operand<?> loc) {
-    switch (dest.type()) {
-      case ADDRESS: {
-        OperandAddress destAddr = ((OperandAddress) dest);
-        switch (loc.type()) {
-          case ADDRESS: {
-            OperandAddress locAddr = ((OperandAddress) loc);
-            this.mov(Register.RCX, locAddr.address);
-            this.mov(destAddr.address, Register.RCX);
-            break;
-          }
-          case REGISTER: {
-            this.mov(((OperandRegister) loc).value(), destAddr.address);
-            break;
-          }
-          case LITERAL: {
-            this.mov(destAddr.address, ((OperandInteger) loc).value());
-            break;
-          }
-        }
-        break;
-      }
-      case REGISTER: {
-        Register destReg = ((OperandRegister) dest).value();
-        switch (loc.type()) {
-          case ADDRESS: {
-            this.mov(destReg, ((OperandAddress) loc).value());
-            break;
-          }
-          case LITERAL: {
-            this.mov(destReg, ((OperandInteger) loc).value());
-            break;
-          }
-          case REGISTER: {
-            this.mov(destReg, ((OperandRegister) loc).value());
-            break;
-          }
-        }
-      }
-    }
-  }
-
-  private void jmp(Operand<?> dest) {
-    switch (dest.type()) {
-      case ADDRESS: {
-        Register destReg = ((OperandAddress) dest).address.register;
-        int offset = ((OperandAddress) dest).address.offset;
-        this.pc = (short) this.memory[this.registers[destReg.ordinal()][offset]];
-        break;
-      }
-      case REGISTER: {
-        Register destReg = ((OperandRegister) dest).value();
-        this.pc = (short) ((this.registers[destReg.ordinal()][1] & 0xFF) | (this.registers[destReg.ordinal()][1]));
-        break;
-      }
-      case LITERAL: {
-        this.pc = ((OperandInteger) dest).value()
-                                         .shortValue();
+  private void jmp(Operand<?> dest){
+    switch(dest.type()){
+      case ADDRESS:{
+        Address destAddr = ((OperandAddress) dest).address;
+        this.pc = this.memoryValue(destAddr) - 1;
         break;
       }
       case LABEL:{
-        this.pc = ((OperandLabel) dest).value().shortValue();
+        this.pc = ((OperandLabel) dest).value() - 1;
+        break;
+      }
+      default: throw new IllegalStateException("Illegal Address Mode For JMP: " + dest.toString());
+    }
+  }
+
+  private void mov(Operand<?> dest, Operand<?> loc){
+    switch(dest.type()){
+      case REGISTER:{
+        Register destReg = ((OperandRegister) dest).value();
+        switch(loc.type()){
+          case REGISTER:{
+            Register locReg = ((OperandRegister) loc).value();
+            this.setRegisterValue(destReg, this.registerValue(locReg));
+            break;
+          }
+          case ADDRESS:{
+            Address locAddr = ((OperandAddress) loc).value();
+            this.setRegisterValue(destReg, this.memoryValue(locAddr));
+            break;
+          }
+          case LITERAL:{
+            int locLit = ((OperandInteger) loc).value();
+            this.setRegisterValue(destReg, locLit);
+            break;
+          }
+          case LABEL:{
+            int label = ((OperandLabel) loc).value();
+            this.setRegisterValue(destReg, label);
+            break;
+          }
+          default: throw new IllegalStateException("Invalid address mode: " + loc.type() + " -> " + dest.type());
+        }
+        break;
+      }
+      case ADDRESS:{
+        Address destAddr = ((OperandAddress) dest).value();
+        switch(loc.type()){
+          case ADDRESS:{
+            Address locAddr = ((OperandAddress) loc).value();
+            this.writeMemory(this.registerValue(destAddr.register) + destAddr.offset, this.memoryValue(locAddr));
+            break;
+          }
+          case REGISTER:{
+            Register locReg = ((OperandRegister) loc).value();
+            this.writeMemory(this.registerValue(destAddr.register) + destAddr.offset, this.registerValue(locReg));
+            break;
+          }
+          case LITERAL:{
+            int locLit = ((OperandInteger) loc).value();
+            this.writeMemory(this.registerValue(destAddr.register) + destAddr.offset, locLit);
+            break;
+          }
+          case BYTES:{
+            short[] bytes = ((OperandBytes) loc).value();
+            for(int i = 0; i < bytes.length; i += 2){
+              this.writeMemory(this.registerValue(destAddr.register) + destAddr.offset + i, bytes[i] | (bytes[i] << 8));
+            }
+            break;
+          }
+          case LABEL:{
+            int label = ((OperandLabel) loc).value();
+            this.writeMemory(this.registerValue(destAddr.register) + destAddr.offset, label);
+            break;
+          }
+          default: throw new IllegalStateException("Invalid address mode: " + loc.type() + " -> " + dest.type());
+        }
         break;
       }
     }
@@ -252,23 +278,23 @@ implements IProcessor {
   public void tick() {
     try{
       if(this.pc > this.end) return;
-      short op = InstructionDecoder.decodeInstruction((short) this.memory[this.pc]);
-      short opA = InstructionDecoder.decodeOperandA((short) this.memory[this.pc]);
-      short opB = InstructionDecoder.decodeOperandB((short) this.memory[this.pc]);
+      short op = InstructionDecoder.decodeInstruction(((short) this.memoryValue(this.pc)));
+      short opA = InstructionDecoder.decodeOperandA(((short) this.memoryValue(this.pc)));
+      short opB = InstructionDecoder.decodeOperandB(((short) this.memoryValue(this.pc)));
 
       if (op > 0) {
-        if (InstructionDecoder.isJmp((short) this.memory[this.pc])) {
+        if (InstructionDecoder.isJmp(((short) this.memoryValue(this.pc)))) {
           this.step(Instruction.JMP, opA, opB);
-        } else if (InstructionDecoder.isSysCall((short) this.memory[this.pc])) {
+        } else if (InstructionDecoder.isSysCall(((short) this.memoryValue(this.pc)))) {
           this.step(Instruction.SYSCALL, opA, opB);
         } else {
           this.step(Instruction.values()[op], opA, opB);
         }
       }
 
-      this.pc++;
     } catch(Exception e){
-      // Fallthrough
+      throw new RuntimeException(e);
     }
+    this.pc++;
   }
 }
