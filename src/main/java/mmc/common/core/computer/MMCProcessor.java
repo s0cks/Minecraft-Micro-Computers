@@ -6,6 +6,7 @@ import io.github.s0cks.mmc.Instruction;
 import io.github.s0cks.mmc.Operand;
 import io.github.s0cks.mmc.OperandAddress;
 import io.github.s0cks.mmc.OperandInteger;
+import io.github.s0cks.mmc.OperandLabel;
 import io.github.s0cks.mmc.OperandRegister;
 import io.github.s0cks.mmc.Register;
 import io.github.s0cks.mmc.util.InstructionDecoder;
@@ -13,16 +14,45 @@ import mmc.api.computer.IProcessor;
 import mmc.api.computer.ITerminal;
 
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.function.Function;
 
 public final class MMCProcessor
 implements IProcessor {
+  private static final Map<Integer, Function<MMCProcessor, Void>> syscalls = new HashMap<>();
+
+  static{
+    syscalls.put(0xB, (processor -> {
+      processor.mov(Register.RCX, 0x8000);
+      for(int i = 0; i < processor.writeOffset; i += 2){
+        processor.mov(new Address(Register.RCX, i), 0);
+      }
+      processor.writeOffset = 0;
+      return null;
+    }));
+
+    syscalls.put(0xC, (processor -> {
+      int x = processor.registerValue(Register.RDI);
+      int y = processor.registerValue(Register.RAX);
+      processor.writeOffset = (y * 32) + x;
+      return null;
+    }));
+
+    syscalls.put(0xA, (processor -> {
+      processor.mov(Register.RCX, 0x8000);
+      processor.mov(new Address(Register.RCX, processor.writeOffset), Register.RDI);
+      processor.writeOffset += 2;
+      return null;
+    }));
+  }
+
   public final ITerminal terminal;
   public final short[][] registers = new short[Register.values().length][2];
   public final int[] memory = new int[65535];
   private short end = 0;
   private short pc = 0;
   private short retPC = 0;
-  private int counter = 0;
   private int writeOffset = 0;
 
   public MMCProcessor(ITerminal terminal) {
@@ -47,22 +77,26 @@ implements IProcessor {
   }
 
   private Operand<?> getOperand(short value) {
-    if (value < Register.values().length) {
+    if(value < Register.values().length){
       return new OperandRegister(Register.values()[value & 0x7]);
-    } else if (value < 0x10 + Register.values().length) {
-      Register base = Register.values()[value & 0x7];
-      int offset = ((int) this.memory[this.pc]);
-      this.pc += 1;
-      return new OperandAddress(base, offset);
-    } else if (value >= 0x20) {
+    } else if(value < 0x10 + Register.values().length){
+      Register reg = Register.values()[value & 0x7];
+      int offset = this.memory[this.pc + 1];
+      this.pc++;
+      return new OperandAddress(reg, offset);
+    } else if(value == 0x2F){
+      int addr = this.memory[this.pc + 1];
+      this.pc++;
+      return new OperandLabel(addr);
+    } else if(value >= 0x20){
       return new OperandInteger(value - 0x20);
-    } else {
-      if (value == 0x1F) {
-        OperandInteger ret = new OperandInteger(this.memory[this.pc]);
-        this.pc += 1;
-        return ret;
-      }
-      return new OperandInteger(0);
+    } else if(value == 0x1F){
+      int literal = this.memory[this.pc + 1];
+      this.pc++;
+      return new OperandInteger(literal);
+    } else{
+      this.pc++;
+      return null;
     }
   }
 
@@ -178,6 +212,10 @@ implements IProcessor {
                                          .shortValue();
         break;
       }
+      case LABEL:{
+        this.pc = ((OperandLabel) dest).value().shortValue();
+        break;
+      }
     }
   }
 
@@ -198,15 +236,7 @@ implements IProcessor {
       }
       case SYSCALL: {
         int value = ((OperandInteger) this.getOperand(opB)).value();
-        System.out.println(value);
-        switch (value) {
-          case 0xA: {
-            this.mov(Register.RCX, 0x8000);
-            this.mov(new Address(Register.RCX, this.writeOffset), Register.RDI);
-            this.writeOffset += 2;
-            break;
-          }
-        }
+        syscalls.get(value).apply(this);
         break;
       }
       case CALL: {
@@ -225,17 +255,18 @@ implements IProcessor {
       short op = InstructionDecoder.decodeInstruction((short) this.memory[this.pc]);
       short opA = InstructionDecoder.decodeOperandA((short) this.memory[this.pc]);
       short opB = InstructionDecoder.decodeOperandB((short) this.memory[this.pc]);
-      this.pc++;
 
-      if (op >= 0) {
-        if (InstructionDecoder.isJmp((short) this.memory[this.pc - 1])) {
+      if (op > 0) {
+        if (InstructionDecoder.isJmp((short) this.memory[this.pc])) {
           this.step(Instruction.JMP, opA, opB);
-        } else if (InstructionDecoder.isSysCall((short) this.memory[this.pc - 1])) {
+        } else if (InstructionDecoder.isSysCall((short) this.memory[this.pc])) {
           this.step(Instruction.SYSCALL, opA, opB);
         } else {
           this.step(Instruction.values()[op], opA, opB);
         }
       }
+
+      this.pc++;
     } catch(Exception e){
       // Fallthrough
     }

@@ -43,7 +43,11 @@ implements ITerminal{
     String str = "";
     for(int ch = (0x8000 + (i * 32)); ch < (0x8000 + (i * 32) + 32); ch += 2){
       int value = ((char) (this.memory[ch] | (this.memory[ch + 1] << 8)));
-      str += ((char) value);
+      if(value == 0x0){
+        str += ' ';
+      } else{
+        str += ((char) value);
+      }
     }
     return str;
   }

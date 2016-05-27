@@ -1,8 +1,6 @@
 package mmc.common.core;
 
-import io.github.s0cks.mmc.Binary;
 import io.github.s0cks.mmc.assembler.Parser;
-import io.github.s0cks.mmc.assembler.Statement;
 import mmc.api.computer.IProcessor;
 import mmc.api.computer.ITerminal;
 import mmc.api.fs.IFileSystem;
@@ -13,7 +11,6 @@ import mmc.common.net.PacketTerminalUpdate;
 import net.minecraft.nbt.NBTTagCompound;
 
 import java.io.InputStream;
-import java.util.List;
 import java.util.concurrent.ForkJoinPool;
 
 public final class ServerTerminal
@@ -49,13 +46,7 @@ implements ITerminal {
       this.state = State.ON;
       this.threads.execute(() -> {
         try(InputStream is = fileSystem.openInputStream("/bios.S")){
-          System.out.println("Loading /bios.S");
-          Binary binary = new Binary();
-          List<Statement> statements = (new Parser(is)).parse();
-          for(Statement statement : statements){
-            statement.encode(binary);
-          }
-          processor.loadBinary(binary);
+          processor.loadBinary((new Parser(is)).compile());
           while(state != State.OFF){
             processor.tick();
           }
