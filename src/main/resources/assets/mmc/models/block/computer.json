@@ -1,0 +1,12 @@
+{
+  "parent": "block/cube",
+  "textures": {
+    "particle": "mmc:blocks/computer/front",
+    "down": "mmc:blocks/computer/bottom",
+    "up": "mmc:blocks/computer/top",
+    "west": "mmc:blocks/computer/left",
+    "east": "mmc:blocks/computer/right",
+    "north": "mmc:blocks/computer/front",
+    "south": "mmc:blocks/computer/back"
+  }
+}
