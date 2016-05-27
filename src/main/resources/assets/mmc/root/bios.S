@@ -1,3 +1,4 @@
+; Print Hello World
 mov RDI, 72
 syscall 10
 mov RDI, 101
