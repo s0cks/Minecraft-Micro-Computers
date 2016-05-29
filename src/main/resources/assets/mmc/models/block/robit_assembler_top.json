@@ -1,22 +1,9 @@
 {
 "__comment": "Designed by Tristaric with BDcraft Cubik PRO 0.96 Beta - http://bdcraft.net",
 "textures": {
-    "texture": "mmc:blocks/assembler/top",
-    "bottom": "mmc:blocks/assembler/bottom"
+    "texture": "mmc:blocks/assembler/top"
 },
 "elements": [ 
-{
-    "from": [ -4, 0, -4 ],
-    "to": [ 20, 3, 20 ],
-    "faces": {
-        "down":  { "uv": [ 0, 0, 12, 12 ], "texture": "#bottom" },
-        "up":    { "uv": [ 0, 0, 12, 12 ], "texture": "#bottom" },
-        "north": { "uv": [ 0, 12.5, 12, 14 ], "texture": "#bottom" },
-        "south": { "uv": [ 0, 12.5, 12, 14 ], "texture": "#bottom" },
-        "west":  { "uv": [ 0, 12.5, 12, 14 ], "texture": "#bottom" },
-        "east":  { "uv": [ 0, 12.5, 12, 14 ], "texture": "#bottom" }
-    }
-},
 {
     "from": [ -2, 3, -2 ],
     "to": [ 18, 5, 18 ],
@@ -89,11 +76,6 @@
         "scale": [ 0.5, 0.5, 0.5 ]
     },
     "firstperson_righthand": {
-        "rotation": [ 0, 45, 0 ],
-        "translation": [ 0, 0, 0 ],
-        "scale": [ 0.4, 0.4, 0.4 ]
-    },
-    "firstperson_lefthand": {
         "rotation": [ 0, 45, 0 ],
         "translation": [ 0, 0, 0 ],
         "scale": [ 0.4, 0.4, 0.4 ]
