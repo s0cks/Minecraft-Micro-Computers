@@ -11,13 +11,14 @@ import mmc.client.render.entity.model.tungsten.TungstenLeftLeg;
 import mmc.client.render.entity.model.tungsten.TungstenRightArm;
 import mmc.client.render.entity.model.tungsten.TungstenRightLeg;
 import mmc.client.render.entity.model.tungsten.TungstenTorso;
-import net.minecraft.entity.Entity;
 import net.minecraft.util.ResourceLocation;
 
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 
-public final class ModularRobitModel{
+public final class ModularRobitModel
+implements Iterable<IRobitPart>{
   public static final ResourceLocation ROSE_GOLD_TEX = new ResourceLocation("mmc", "textures/entity/robit_rosegold.png");
   public static final ResourceLocation TUNGSTEN_TEX = new ResourceLocation("mmc", "textures/entity/robit_tungsten.png");
 
@@ -25,7 +26,7 @@ public final class ModularRobitModel{
   public static final ModularRobitModel ROSE_GOLD = new ModularRobitModel();
   public static final ModularRobitModel TUNG_GOLD = new ModularRobitModel();
 
-  static{
+  static {
     // Tungsten
     // Legs
     TUNGSTEN.addPart(new TungstenLeftLeg());
@@ -56,13 +57,12 @@ public final class ModularRobitModel{
 
   private final Map<IRobitPart.Type, IRobitPart> parts = new HashMap<>();
 
-  public void addPart(IRobitPart part){
+  public void addPart(IRobitPart part) {
     this.parts.put(part.type(), part);
   }
 
-  public void render(Entity entity, float f){
-    for(Map.Entry<IRobitPart.Type, IRobitPart> part : this.parts.entrySet()){
-      part.getValue().render(entity, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, f);
-    }
+  @Override
+  public Iterator<IRobitPart> iterator() {
+    return this.parts.values().iterator();
   }
 }
