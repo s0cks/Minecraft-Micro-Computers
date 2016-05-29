@@ -10,10 +10,13 @@ import io.github.s0cks.mmc.OperandInteger;
 import io.github.s0cks.mmc.OperandLabel;
 import io.github.s0cks.mmc.OperandRegister;
 import io.github.s0cks.mmc.Register;
+import io.github.s0cks.mmc.util.Disassembler;
 import io.github.s0cks.mmc.util.InstructionDecoder;
 import mmc.api.computer.IProcessor;
 import mmc.api.computer.ITerminal;
 
+import java.io.ByteArrayOutputStream;
+import java.io.PrintWriter;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -84,6 +87,22 @@ implements IProcessor {
     if(page >= this.pageCount) throw new IllegalStateException("Attempt to write paste end of memory");
     if(this.pages[page] == null) this.pages[page] = new int[0x100];
     this.pages[page][loc % 0x100] = value & this.pageMask;
+  }
+
+  @Override
+  public void loadBinaryToDump(Binary bin) {
+    try(ByteArrayOutputStream bos = new ByteArrayOutputStream()){
+      Disassembler.dump(new PrintWriter(bos), bin);
+
+      String dump = new String(bos.toByteArray());
+      for(int i = 0, j = 0x8000; i < dump.length(); i++, j += 2){
+        char c = dump.charAt(i);
+        this.writeMemory(j, (c & 0xFF));
+        this.writeMemory(j + 1, ((c >> 8) & 0xFF));
+      }
+    } catch(Exception e){
+      throw new RuntimeException(e);
+    }
   }
 
   @Override
@@ -282,7 +301,7 @@ implements IProcessor {
       short opA = InstructionDecoder.decodeOperandA(((short) this.memoryValue(this.pc)));
       short opB = InstructionDecoder.decodeOperandB(((short) this.memoryValue(this.pc)));
 
-      if (op > 0) {
+      if (op > 0 && op < Instruction.values().length) {
         if (InstructionDecoder.isJmp(((short) this.memoryValue(this.pc)))) {
           this.step(Instruction.JMP, opA, opB);
         } else if (InstructionDecoder.isSysCall(((short) this.memoryValue(this.pc)))) {
@@ -293,7 +312,7 @@ implements IProcessor {
       }
 
     } catch(Exception e){
-      throw new RuntimeException(e);
+      // Fallthrough
     }
     this.pc++;
   }

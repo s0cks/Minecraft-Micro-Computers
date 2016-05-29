@@ -9,8 +9,10 @@ import mmc.common.core.ServerTerminalRegistry;
 import mmc.common.core.TerminalRegistry;
 import mmc.common.core.fs.Ext9001ResourceMount;
 import mmc.common.core.fs.MountRegistry;
+import mmc.common.entity.EntityRobit;
 import mmc.common.gui.ContainerComputer;
 import mmc.common.net.MMCNetwork;
+import mmc.common.tile.TileEntityAssembler;
 import mmc.common.tile.TileEntityComputer;
 import net.minecraft.creativetab.CreativeTabs;
 import net.minecraft.entity.player.EntityPlayer;
@@ -25,6 +27,7 @@ import net.minecraftforge.fml.common.event.FMLPostInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 import net.minecraftforge.fml.common.network.IGuiHandler;
 import net.minecraftforge.fml.common.network.NetworkRegistry;
+import net.minecraftforge.fml.common.registry.EntityRegistry;
 import net.minecraftforge.fml.common.registry.GameRegistry;
 
 @Mod(modid = "mmc",
@@ -51,7 +54,9 @@ implements IGuiHandler {
   @Mod.EventHandler
   public void onPreInit(FMLPreInitializationEvent e) {
     MMCBlocks.init();
+    MMCItems.init();
 
+    proxy.preInit();
     proxy.registerRenders();
   }
 
@@ -63,7 +68,12 @@ implements IGuiHandler {
 
     MinecraftForge.EVENT_BUS.register(new MMCTickHandler());
 
+    EntityRegistry.registerModEntity(EntityRobit.class, "robit", 127, instance, 80, 3, false);
+
+    GameRegistry.registerTileEntity(TileEntityAssembler.class, "assembler");
     GameRegistry.registerTileEntity(TileEntityComputer.class, "computer");
+
+    proxy.init();
   }
 
   @Mod.EventHandler

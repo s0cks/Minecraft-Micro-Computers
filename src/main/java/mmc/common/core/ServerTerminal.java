@@ -1,6 +1,8 @@
 package mmc.common.core;
 
+import io.github.s0cks.mmc.Binary;
 import io.github.s0cks.mmc.assembler.Parser;
+import io.github.s0cks.mmc.linker.Linker;
 import mmc.api.computer.IProcessor;
 import mmc.api.computer.ITerminal;
 import mmc.api.fs.IFileSystem;
@@ -10,6 +12,8 @@ import mmc.common.net.MMCNetwork;
 import mmc.common.net.PacketTerminalUpdate;
 import net.minecraft.nbt.NBTTagCompound;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.util.concurrent.ForkJoinPool;
 
@@ -45,13 +49,19 @@ implements ITerminal {
     if(this.state != State.ON){
       this.state = State.ON;
       this.threads.execute(() -> {
-        try(InputStream is = fileSystem.openInputStream("/bios.S")){
-          processor.loadBinary((new Parser(is)).compile());
-          while(state != State.OFF){
-            processor.tick();
+        try(InputStream biosIn = this.fileSystem.openInputStream("/bios.S");
+            InputStream stdlibIn = this.fileSystem.openInputStream("/stdlib.S");
+            ByteArrayOutputStream stdlibBos = new ByteArrayOutputStream()){
+          (new Parser(stdlibIn)).compile(stdlibBos);
+          Linker.SimpleObjectFile stdlibSof = new Linker.SimpleObjectFile(new ByteArrayInputStream(stdlibBos.toByteArray()));
+
+          Binary bin = (new Linker()).link(biosIn, stdlibSof);
+          this.processor.loadBinary(bin);
+          while(this.state == State.ON){
+            this.processor.tick();
           }
         } catch(Exception e){
-          throw new RuntimeException(e);
+          e.printStackTrace(System.err);
         }
       });
     }

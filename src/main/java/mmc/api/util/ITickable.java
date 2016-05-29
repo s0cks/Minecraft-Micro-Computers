@@ -1,4 +1,4 @@
-package mmc.api.computer;
+package mmc.api.util;
 
 public interface ITickable{
   public void tick();

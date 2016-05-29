@@ -63,9 +63,12 @@ extends GuiScreen {
     GlStateManager.scale(2.0F, 2.0F, 2.0F);
 
     int y = 0;
-    for(int i = 0; i <= 11; i++){
-      this.fontRendererObj.drawString(this.terminal.line(i), 0, y, 0xFFFFFF);
-      y += this.fontRendererObj.FONT_HEIGHT + 2;
+    for(int i = 0; i <= 16; i++){
+      String[] strs = this.terminal.line(i).split("\n");
+      for(String str : strs){
+        this.fontRendererObj.drawString(str, 0, y, 0xFFFFFF);
+        y += this.fontRendererObj.FONT_HEIGHT + 2;
+      }
     }
 
     GlStateManager.popMatrix();

@@ -41,7 +41,7 @@ implements ITerminal{
   @Override
   public String line(int i) {
     String str = "";
-    for(int ch = (0x8000 + (i * 32)); ch < (0x8000 + (i * 32) + 32); ch += 2){
+    for(int ch = (0x8000 + (i * 64)); ch < (0x8000 + (i * 64) + 64); ch += 2){
       int value = ((char) (this.memory[ch] | (this.memory[ch + 1] << 8)));
       if(value == 0x0){
         str += ' ';
